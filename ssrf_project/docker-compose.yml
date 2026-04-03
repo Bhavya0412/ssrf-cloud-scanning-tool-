@@ -1,0 +1,44 @@
+services:
+
+  ssrf_fuzzer:
+    build:
+      context: .
+      dockerfile: ./scanners/ssrf_fuzzer/Dockerfile
+    container_name: ssrf_fuzzer
+    volumes:
+      - ./payloads:/app/payloads
+      - ./output:/app/output
+    networks:
+      - ssrf_net
+
+  orchestrator:
+    build:
+      context: .
+      dockerfile: ./orchestrator/Dockerfile
+    container_name: ssrf_orchestrator
+    depends_on:
+      - ssrf_fuzzer
+    volumes:
+      - ./input:/app/input
+      - ./output:/app/output
+      - ./payloads:/app/payloads
+    networks:
+      - ssrf_net
+
+  ai_scanner:
+    build:
+      context: .
+      dockerfile: ./ai_scanner/Dockerfile
+    container_name: ssrf_ai_scanner
+    depends_on:
+      - orchestrator
+    volumes:
+      - ./input:/app/input
+      - ./output:/app/output
+      - ./ai:/app/ai
+    networks:
+      - ssrf_net
+
+networks:
+  ssrf_net:
+    driver: bridge

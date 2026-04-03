@@ -1,0 +1,32 @@
+# Virtual environments
+venv310/
+venv/
+env/
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# AI model weights (large files)
+*.safetensors
+*.bin
+*.pth
+*.pt
+*.onnx
+*.pb
+*.h5
+*.ckpt
+*.weights
+
+# Archives
+*.zip
+
+# Misc
+.env
+node_modules/
+.vscode/
+.idea/
+*.txt

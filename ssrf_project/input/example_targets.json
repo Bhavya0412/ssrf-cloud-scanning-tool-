@@ -1,0 +1,41 @@
+[
+  {
+    "id": "httpbin-get-url",
+    "url": "https://httpbin.org/get",
+    "method": "GET",
+    "params": {
+      "url": {
+        "type": "url",
+        "example": "https://example.com/image.jpg"
+      }
+    },
+    "cloud": "generic",
+    "notes": "Uses httpbin.org/get?url=... to simulate a server-side fetch parameter."
+  },
+  {
+    "id": "httpbin-post-url",
+    "url": "https://httpbin.org/post",
+    "method": "POST",
+    "params": {
+      "image_url": {
+        "type": "url",
+        "example": "https://example.com/photo.png"
+      }
+    },
+    "cloud": "generic",
+    "notes": "POST endpoint with body param 'image_url' to simulate an SSRF-like input."
+  },
+  {
+    "id": "postman-echo-get",
+    "url": "https://postman-echo.com/get",
+    "method": "GET",
+    "params": {
+      "target": {
+        "type": "url",
+        "example": "https://example.com/file.txt"
+      }
+    },
+    "cloud": "generic",
+    "notes": "Another external echo service to see how parameters are sent."
+  }
+]

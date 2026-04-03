@@ -1,0 +1,14 @@
+id: ssrf-mock-test
+info:
+  name: SSRF mock metadata check
+  author: template-stub
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}/fetch?url={{FILENAME}}"
+    payloads:
+      - "{{FILENAME}}"
+    matchers:
+      - type: word
+        words:
+          - "fetched_url"

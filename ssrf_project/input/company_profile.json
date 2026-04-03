@@ -1,0 +1,57 @@
+{
+  "company_name": "ExampleSecurityClient",
+  "cloud_environments": [
+    {
+      "provider": "aws",
+      "label": "prod-aws-eu",
+      "account_id": "111111111111",
+      "regions": ["eu-west-1"],
+      "services": [
+        {
+          "type": "webapp",
+          "name": "image-converter",
+          "base_url": "http://replicated-aws-image-converter.local",
+          "ssrf_relevant": true,
+          "description": "Image conversion microservice that accepts URLs and fetches images server-side."
+        },
+        {
+          "type": "api",
+          "name": "report-generator",
+          "base_url": "http://replicated-aws-report-api.local",
+          "ssrf_relevant": false,
+          "description": "Less SSRF-relevant API but still part of replicated infra."
+        }
+      ]
+    },
+    {
+      "provider": "gcp",
+      "label": "staging-gcp",
+      "project_id": "gcp-example-project",
+      "regions": ["europe-west1"],
+      "services": [
+        {
+          "type": "webapp",
+          "name": "pdf-merger",
+          "base_url": "http://replicated-gcp-pdf-merger.local",
+          "ssrf_relevant": true,
+          "description": "Service that fetches remote PDFs and merges them (classic SSRF surface)."
+        }
+      ]
+    },
+    {
+      "provider": "azure",
+      "label": "dev-azure",
+      "subscription_id": "00000000-0000-0000-0000-000000000000",
+      "regions": ["westeurope"],
+      "services": [
+        {
+          "type": "function",
+          "name": "webhook-processor",
+          "base_url": "http://replicated-azure-webhook.local",
+          "ssrf_relevant": true,
+          "description": "Processes third-party webhooks, often SSRF-adjacent."
+        }
+      ]
+    }
+  ]
+}

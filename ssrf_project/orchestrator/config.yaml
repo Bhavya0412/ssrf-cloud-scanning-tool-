@@ -1,0 +1,25 @@
+# orchestrator/config.yaml
+
+# If true, orchestrator will run the cloud replicator to generate targets.
+use_cloud_replicator: true
+
+cloud_replicator:
+  # "cli" means we run your universal cloud replicator as an external command.
+  mode: "cli"
+
+  # Command to run your universal cloud replicator.
+  # 👉 Change this to match YOUR actual replicator entrypoint.
+  # Example if your code is in cloud_replicator/main.py:
+  #   python -m cloud_replicator.main
+  command: "python -m cloud_replicator.main"
+
+  # Path to a JSON file describing the company/cloud environment.
+  # You will edit this per-company.
+  config_path: "input/company_profile.json"
+
+  # Where the replicator writes the final list of SSRF-relevant targets.
+  # This MUST be a JSON list of targets in the same shape as input/example_targets.json.
+  output_targets_path: "input/targets_from_replicator.json"
+
+  # Max time (seconds) we'll wait for the replicator to complete.
+  timeout_seconds: 900
