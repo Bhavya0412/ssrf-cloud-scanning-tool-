@@ -7,7 +7,10 @@ services:
     container_name: ssrf_fuzzer
     volumes:
       - ./payloads:/app/payloads
-      - ./output:/app/output
+      - ./output:/out
+    environment:
+      - OUT_DIR=/out
+      - SSRF_SAFE_MODE=1
     networks:
       - ssrf_net
 
@@ -22,6 +25,10 @@ services:
       - ./input:/app/input
       - ./output:/app/output
       - ./payloads:/app/payloads
+    environment:
+      - PYTHONPATH=/app
+      - INTERACTSH_SERVER=${INTERACTSH_SERVER:-https://interactsh.com}
+      - INTERACTSH_TOKEN=${INTERACTSH_TOKEN:-}
     networks:
       - ssrf_net
 
@@ -36,6 +43,8 @@ services:
       - ./input:/app/input
       - ./output:/app/output
       - ./ai:/app/ai
+    environment:
+      - PYTHONPATH=/app
     networks:
       - ssrf_net
 

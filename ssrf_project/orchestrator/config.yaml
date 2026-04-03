@@ -1,7 +1,7 @@
 # orchestrator/config.yaml
 
 # If true, orchestrator will run the cloud replicator to generate targets.
-use_cloud_replicator: true
+use_cloud_replicator: false
 
 cloud_replicator:
   # "cli" means we run your universal cloud replicator as an external command.

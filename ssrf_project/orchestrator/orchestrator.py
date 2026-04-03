@@ -22,8 +22,12 @@ from plugins.ssrfmap.adapter import SSRFmapAdapter
 ROOT = Path(__file__).parent.parent   # ssrf_project/
 INPUT = ROOT / "input"
 OUTPUT = ROOT / "output"
-PAYLOADS_SSRF = ROOT / "payloads" / "ssrf" / "default_payloads.txt"
+
+# FIX: default_payloads.txt was deleted — now pointing to ssrf_payloads.csv
+PAYLOADS_SSRF_CSV = ROOT / "payloads" / "ssrf" / "ssrf_payloads.csv"
+PAYLOADS_SSRF_TXT = ROOT / "payloads" / "ssrf" / "default_payloads.txt"
 INJECTED_PAYLOADS = ROOT / "payloads" / "ssrf" / "injected_payloads.txt"
+
 SSRF_FUZZER_DIR = ROOT / "scanners" / "ssrf_fuzzer"
 OUT_REPORT = OUTPUT / "report.json"
 
@@ -31,11 +35,6 @@ OUTPUT.mkdir(parents=True, exist_ok=True)
 
 
 def load_targets() -> List[Dict[str, Any]]:
-    """
-    Load targets from either:
-      - cloud replicator output (if enabled in config), or
-      - input/example_targets.json as fallback.
-    """
     cfg = {}
     try:
         cfg = load_config()
@@ -58,43 +57,61 @@ def load_targets() -> List[Dict[str, Any]]:
     if default_path.exists():
         return json.loads(default_path.read_text(encoding="utf-8"))
 
-    print("[orchestrator] No targets found (neither cloud replicator output nor example_targets.json).")
+    print("[orchestrator] No targets found.")
     return []
 
 
-def inject_payloads(oob_domain: str) -> Path:
+def _load_payload_lines() -> List[str]:
     """
-    Replace {OOB} placeholder in payloads/ssrf/default_payloads.txt
-    and write to injected_payloads.txt.
+    Load payloads from txt file if present, else fall back to CSV column 'payload'.
     """
-    if not PAYLOADS_SSRF.exists():
-        INJECTED_PAYLOADS.write_text(f"http://{oob_domain}\n", encoding="utf-8")
-        return INJECTED_PAYLOADS
+    # Prefer plain txt
+    if PAYLOADS_SSRF_TXT.exists():
+        return [
+            l.strip()
+            for l in PAYLOADS_SSRF_TXT.read_text(encoding="utf-8").splitlines()
+            if l.strip() and not l.startswith("#")
+        ]
 
-    lines = [
-        l.strip()
-        for l in PAYLOADS_SSRF.read_text(encoding="utf-8").splitlines()
-        if l.strip()
+    # Fall back to CSV — extract 'payload' column
+    if PAYLOADS_SSRF_CSV.exists():
+        import csv
+        lines = []
+        with open(PAYLOADS_SSRF_CSV, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                p = (row.get("payload") or row.get("request_path") or "").strip()
+                if p:
+                    lines.append(p)
+        return lines
+
+    # Hardcoded minimal fallback
+    return [
+        "http://169.254.169.254/latest/meta-data/",
+        "http://127.0.0.1/",
+        "http://{OOB}",
     ]
+
+
+def inject_payloads(oob_domain: str) -> Path:
+    lines = _load_payload_lines()
+    if not lines:
+        lines = [f"http://{oob_domain}"]
     injected = [ln.replace("{OOB}", oob_domain) for ln in lines]
+    INJECTED_PAYLOADS.parent.mkdir(parents=True, exist_ok=True)
     INJECTED_PAYLOADS.write_text("\n".join(injected), encoding="utf-8")
     return INJECTED_PAYLOADS
 
 
 def run_fuzzer_job(target: Dict[str, Any], oob_domain: str) -> Dict[str, Any]:
-    """
-    Run ssrf_fuzzer for a single target:
-     - Prefer docker image 'ssrf-fuzzer:local'
-     - Fallback: local python run.py
-    """
     job = {"target": target, "id": str(uuid.uuid4()), "oob_domain": oob_domain}
 
-    # Prefer docker first
     if shutil.which("docker"):
         cmd = [
             "docker", "run", "--rm", "-i",
             "-v", f"{str(SSRF_FUZZER_DIR.resolve())}:/ssrf_fuzzer:ro",
             "-v", f"{str(OUTPUT.resolve())}:/out",
+            "-e", f"OOB_BASE_DOMAIN={oob_domain}",
             "ssrf-fuzzer:local"
         ]
         try:
@@ -114,7 +131,6 @@ def run_fuzzer_job(target: Dict[str, Any], oob_domain: str) -> Dict[str, Any]:
             print("[orchestrator] docker run error for fuzzer:", e)
             return {}
 
-    # Fallback: local Python fuzzer
     script = SSRF_FUZZER_DIR / "run.py"
     if not script.exists():
         print("[orchestrator] fuzzer script not found at", script)
@@ -126,6 +142,7 @@ def run_fuzzer_job(target: Dict[str, Any], oob_domain: str) -> Dict[str, Any]:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             timeout=300,
+            cwd=str(ROOT),   # FIX: set cwd so relative imports work
         )
         if proc.returncode != 0:
             print("[orchestrator] local fuzzer failed:",
@@ -138,35 +155,30 @@ def run_fuzzer_job(target: Dict[str, Any], oob_domain: str) -> Dict[str, Any]:
 
 
 def create_targets_list_for_tool(targets: List[Dict[str, Any]]) -> list:
-    """
-    Convert full target objects into a simple list of URLs for tools like nuclei.
-    """
-    urls = []
-    for t in targets:
-        u = t.get("url")
-        if u:
-            urls.append(u)
-    return urls
+    return [t["url"] for t in targets if t.get("url")]
 
 
 def main():
-    # 1. Load targets (from cloud replicator or fallback)
     targets = load_targets()
     if not targets:
         print("[orchestrator] No targets to scan. Exiting.")
         return
 
-    # 2. Create OOB token for scan
-    reg = create_oob_for_scan(prefix=f"scan-{int(time.time())}", ttl=3600)
-    oob_domain = reg["domain"]
-    token_id = reg["id"]
-    print("[orchestrator] OOB domain:", oob_domain, "token id:", token_id)
+    # OOB setup — graceful fallback if interactsh is unreachable
+    oob_domain = f"oob-{int(time.time())}.localtest.me"
+    token_id = str(uuid.uuid4())
+    try:
+        reg = create_oob_for_scan(prefix=f"scan-{int(time.time())}", ttl=3600)
+        oob_domain = reg["domain"]
+        token_id = reg["id"]
+        print("[orchestrator] OOB domain:", oob_domain, "token id:", token_id)
+    except Exception as e:
+        print("[orchestrator] WARNING: OOB registration failed:", e)
+        print("[orchestrator] Continuing with local fallback OOB domain:", oob_domain)
 
-    # 3. Inject payloads with {OOB} placeholder
     injected_path = inject_payloads(oob_domain)
     print("[orchestrator] Injected payloads written to:", injected_path)
 
-    # 4. Run SSRF fuzzer per target
     fuzzer_results = []
     start_ts = int(time.time())
     for t in targets:
@@ -175,7 +187,6 @@ def main():
         if res:
             fuzzer_results.append(res)
 
-    # 5. Run Nuclei adapter (Docker preferred)
     nuclei_adapter = NucleiAdapter(ROOT)
     try:
         nuclei_targets = create_targets_list_for_tool(targets)
@@ -185,7 +196,6 @@ def main():
         print("[orchestrator] nuclei adapter error:", e)
         nuclei_findings = []
 
-    # 6. Run SSRFmap adapter (Docker preferred)
     ssrfmap_adapter = SSRFmapAdapter(ROOT)
     try:
         ssrfmap_input = injected_path if injected_path.exists() else create_targets_list_for_tool(targets)
@@ -195,7 +205,6 @@ def main():
         print("[orchestrator] ssrfmap adapter error:", e)
         ssrfmap_findings = []
 
-    # 7. Poll OOB events
     all_oob_events = []
     for i in range(6):
         try:
@@ -208,15 +217,9 @@ def main():
             break
         time.sleep(2)
 
-    # 8. Correlate OOB across all findings
-    combined = []
-    combined.extend(fuzzer_results)
-    combined.extend(nuclei_findings)
-    combined.extend(ssrfmap_findings)
-
+    combined = fuzzer_results + nuclei_findings + ssrfmap_findings
     enriched, _ = correlate_oob(combined, {token_id: oob_domain}, since_ts=start_ts)
 
-    # 9. Build final report
     report = {
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "oob": {"domain": oob_domain, "token_id": token_id},

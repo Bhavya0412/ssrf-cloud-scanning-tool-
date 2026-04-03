@@ -1,0 +1,15 @@
+id: ssrf-basic
+info:
+  name: Basic SSRF Detection
+  severity: high
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}?url=http://169.254.169.254/latest/meta-data/"
+      - "{{BaseURL}}?url=http://metadata.google.internal/computeMetadata/v1/"
+    matchers:
+      - type: word
+        words:
+          - "meta-data"
+          - "computeMetadata"
+          - "security-credentials"

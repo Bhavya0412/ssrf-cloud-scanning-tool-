@@ -9,7 +9,6 @@ INPUT_DIR = "/app/input"
 OUTPUT_DIR = "/app/output"
 AI_DIR = "/app/ai"
 PAYLOAD_CSV_PATH = "/app/input/ssrf_payloads.csv"
-
 RESULTS_JSON_PATH = "/app/output/ssrf_ai_results.json"
 
 sys.path.append("/app")
@@ -36,57 +35,39 @@ def load_payloads(path):
     with open(path, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
-
             payload = row.get("payload") or row.get("request_path") or ""
             payload = payload.strip()
-
             if not payload:
                 continue
-
             lower = payload.lower()
-            if (
-                "127.0.0.1" in lower or
-                "localhost" in lower or
-                "[::1]" in lower
-            ):
+            if "127.0.0.1" in lower or "localhost" in lower or "[::1]" in lower:
                 continue
-
             rows.append(row)
-
     return rows
-
 
 
 def build_scan_jobs(company_profile, example_targets, payload_rows):
     jobs = []
-
     for env in company_profile.get("cloud_environments", []):
         provider = env.get("provider")
         label = env.get("label")
-
         for svc in env.get("services", []):
             if not svc.get("ssrf_relevant", False):
                 continue
-
             service_name = svc.get("name")
             base_url = svc.get("base_url")
-
             for target in example_targets:
                 method = target.get("method", "GET").upper()
                 target_url = target.get("url")
                 target_id = target.get("id")
                 params = target.get("params", {})
-
                 url_params = [
                     p for p, meta in params.items()
                     if isinstance(meta, dict) and meta.get("type") == "url"
                 ]
-
                 if not url_params:
                     continue
-
                 for prow in payload_rows:
-
                     jobs.append({
                         "provider": provider,
                         "env_label": label,
@@ -96,38 +77,25 @@ def build_scan_jobs(company_profile, example_targets, payload_rows):
                         "target_url": target_url,
                         "http_method": method,
                         "url_params": url_params,
-
-                        # FIXED — uses fallback correctly
                         "payload": prow.get("payload") or prow.get("request_path"),
-
-                        # FIXED — use is_vulnerable (0/1)
                         "risk": prow.get("is_vulnerable", "0"),
-
-                        # FIXED — category string
                         "category": f"{prow.get('method')} {prow.get('request_path')}",
-
-                        # FIXED — safe flag
                         "safe_flag": "0" if prow.get("is_vulnerable") == "1" else "1"
                     })
-
     return jobs
-
 
 
 def send_real_request(job):
     url = job["target_url"]
     method = job["http_method"]
     payload = job["payload"]
-
     params = {}
     data = {}
-
     for p in job["url_params"]:
         if method == "GET":
             params[p] = payload
         else:
             data[p] = payload
-
     try:
         resp = requests.request(method, url, params=params, data=data, timeout=8)
         return {
@@ -137,13 +105,7 @@ def send_real_request(job):
             "url": resp.url
         }
     except Exception as e:
-        return {
-            "status_code": None,
-            "ok": False,
-            "reason": str(e),
-            "url": url
-        }
-
+        return {"status_code": None, "ok": False, "reason": str(e), "url": url}
 
 
 def main():
@@ -155,11 +117,9 @@ def main():
     if not os.path.exists(company_profile_path):
         print("[ERROR] company_profile.json missing in /app/input")
         return
-
     if not os.path.exists(example_targets_path):
         print("[ERROR] example_targets.json missing in /app/input")
         return
-
     if not os.path.exists(PAYLOAD_CSV_PATH):
         print("[ERROR] ssrf_payloads.csv missing in /app/input")
         return
@@ -173,12 +133,10 @@ def main():
 
     jobs = build_scan_jobs(company_profile, example_targets, payload_rows)
     total = len(jobs)
-
     print(f"[AI-SCAN] Total scan jobs generated: {total}\n")
 
     findings = []
     jobs_tested = 0
-
 
     for idx, job in enumerate(jobs, start=1):
         jobs_tested += 1
@@ -194,7 +152,6 @@ def main():
         print(f"            Final URL: {http_info['url']}")
 
         category = f"{job['category']} | provider={job['provider']} | service={job['service_name']}"
-
         decision = classify_ssrf(category, payload, job["risk"])
         print(f"   [AI]   -> Decision: {decision} (GT safe={job['safe_flag']})\n")
 
@@ -218,9 +175,8 @@ def main():
 
         if decision == "VULNERABLE":
             findings.append(record)
-            print("🚨 SSRF FOUND — stopping early.\n")
+            print("SSRF FOUND - stopping early.\n")
             break
-
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -235,22 +191,17 @@ def main():
         json.dump(results_doc, f, indent=2)
 
     print("[AI-SCAN] Results saved to /app/output/ssrf_ai_results.json")
-        # ---------------------------------------------------------
-    # AUTO-GENERATE PDF REPORT
-    # ---------------------------------------------------------
+
+    # FIX: was indented inside the with block above — unreachable code
+    # PDF report generation now correctly outside the with block
     try:
         print("[AI-SCAN] Generating PDF report...")
-
+        # FIX: import path — file is in /app/ssrf_ai_pdf_report.py not a package
+        sys.path.insert(0, BASE_DIR)
         from ssrf_ai_pdf_report import generate_pdf
-
         pdf_path = os.path.join(OUTPUT_DIR, "ssrf_ai_report.pdf")
-        generate_pdf(
-            output_json_path=RESULTS_JSON_PATH,
-            pdf_path=pdf_path
-        )
-
+        generate_pdf(output_json_path=RESULTS_JSON_PATH, pdf_path=pdf_path)
         print(f"[AI-SCAN] PDF generated at {pdf_path}")
-
     except Exception as e:
         print("[AI-SCAN] PDF generation failed:", str(e))
 
