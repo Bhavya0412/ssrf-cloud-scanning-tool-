@@ -1,3 +1,5 @@
+import time
+time.sleep(10)  # wait for services
 #!/usr/bin/env python3
 import json
 import uuid
